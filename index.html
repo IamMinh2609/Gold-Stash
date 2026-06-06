@@ -284,6 +284,28 @@
 
         <div class="settle" id="settleBox"></div>
 
+        <button class="ghost paybtn" type="button" id="loanToggle">💵 Lend / Borrow cash</button>
+        <div id="loanForm" style="display:none">
+          <div class="mini-h">Direction</div>
+          <div class="seg" id="loanSeg">
+            <label><input type="radio" name="loandir" value="lent" checked><span id="loanLent">I lent them</span></label>
+            <label><input type="radio" name="loandir" value="borrowed"><span id="loanBorrowed">I borrowed</span></label>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <input type="text" inputmode="text" id="loanAmt" placeholder="Amount (e.g. 10)">
+            <input type="text" id="loanNote" placeholder="Note (optional)">
+          </div>
+          <label class="splitrow" style="margin-top:8px">
+            <input type="checkbox" id="loanBank" checked>
+            <span>Also move money in my account</span>
+          </label>
+          <div id="loanBankFields">
+            <select id="loanAcct"></select>
+          </div>
+          <div class="hint" id="loanHint"></div>
+          <button class="add" type="button" id="loanRecord">Record</button>
+        </div>
+
         <div class="sharehint">Add shared costs using <b>Split with <span id="sharehintName">roommate</span></b> on the transaction form above.</div>
 
         <form id="shareForm" style="display:none">
@@ -628,6 +650,10 @@ function render() {
   document.getElementById('payerMe').textContent = nm.me + ' paid';
   document.getElementById('payerMate').textContent = nm.mate + ' paid';
   const shn = document.getElementById('sharehintName'); if(shn) shn.textContent = nm.mate;
+  document.getElementById('loanLent').textContent = 'I lent ' + nm.mate;
+  document.getElementById('loanBorrowed').textContent = 'I borrowed from ' + nm.mate;
+  const la = document.getElementById('loanAcct');
+  if(la) la.innerHTML = state.accounts.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
 
   // payer selector
   document.getElementById('sPayer').innerHTML =
@@ -1041,6 +1067,54 @@ document.getElementById('histToggle').addEventListener('click', ()=>{
   histOpen = !histOpen;
   render();
 });
+// Lend / Borrow cash
+document.getElementById('loanToggle').addEventListener('click', ()=>{
+  const f = document.getElementById('loanForm');
+  f.style.display = f.style.display==='none' ? 'block' : 'none';
+});
+document.getElementById('loanBank').addEventListener('change', e=>{
+  document.getElementById('loanBankFields').style.display = e.target.checked ? 'block' : 'none';
+});
+function updateLoanHint(){
+  const amt = calc(document.getElementById('loanAmt').value)||0;
+  const dir = document.querySelector('input[name=loandir]:checked').value;
+  const h = document.getElementById('loanHint');
+  if(amt<=0){ h.textContent=''; return; }
+  const nm = state.names;
+  h.textContent = dir==='lent'
+    ? `${nm.mate} will owe you ${money(amt)}.`
+    : `You will owe ${nm.mate} ${money(amt)}.`;
+}
+document.getElementById('loanAmt').addEventListener('input', updateLoanHint);
+document.querySelectorAll('input[name=loandir]').forEach(r=>r.addEventListener('change', updateLoanHint));
+
+document.getElementById('loanRecord').addEventListener('click', ()=>{
+  const amt = calc(document.getElementById('loanAmt').value);
+  if(!amt || isNaN(amt) || amt<=0){ alert('Enter a valid amount.'); return; }
+  const dir = document.querySelector('input[name=loandir]:checked').value;
+  const note = document.getElementById('loanNote').value.trim();
+  const link = id();
+  const payer = dir==='lent' ? 'me' : 'mate';
+  state.shares.push({ id:id(), desc: note || (dir==='lent'?'Cash lent':'Cash borrowed'),
+    total:amt, mine: dir==='lent'?0:100, theirs: dir==='lent'?100:0,
+    payer, theirOwe:amt, paid:false, ts:Date.now(), loan:true, linkId:link });
+  if(document.getElementById('loanBank').checked){
+    const acctId = document.getElementById('loanAcct').value;
+    if(acctId){
+      const bt = { id:id(), type: dir==='lent'?'expense':'income',
+        desc: (dir==='lent'?'Lent ':'Borrowed from ')+state.names.mate,
+        amt, acctId, cat:'Loan', ts:Date.now(), linkId:link, budgetAmount:0 };
+      state.txns.push(bt);
+      applyTxn(bt, +1);
+    }
+  }
+  document.getElementById('loanAmt').value=''; document.getElementById('loanNote').value='';
+  document.querySelector('input[name=loandir][value=lent]').checked=true;
+  document.getElementById('loanHint').textContent='';
+  document.getElementById('loanForm').style.display='none';
+  save(); render();
+});
+
 document.getElementById('showMoreShare').addEventListener('click', ()=>{
   shareShown += 3;
   render();
